@@ -8,6 +8,8 @@ like AI slop.
 
 > The single worst outcome is a draft that reads like everyone else's.
 
+**▶ [See the deck](https://jsky-dev.github.io/collaborative-editor/)** — a short walkthrough of what it does and how it works.
+
 ## What it does
 
 - **Four passes, in order** — structure → grammar → wording → a final coherence sweep. Big things
@@ -59,7 +61,7 @@ or "workshop this draft," "edit but keep my voice," "give me options, don't just
 | [`collaborative-editor/scripts/make_tracked_docx.py`](./collaborative-editor/scripts/make_tracked_docx.py) | Builds a Word `.docx` with native tracked changes from original + final |
 | [`collaborative-editor/scripts/make_redline.py`](./collaborative-editor/scripts/make_redline.py) | Builds a portable HTML visual redline |
 | [`collaborative-editor.skill`](./collaborative-editor.skill) | Packaged skill for Claude Cowork |
-| [`collaborative-editor-deck.html`](./collaborative-editor-deck.html) | A slide deck explaining the skill |
+| [`index.html`](./index.html) | The slide deck explaining the skill (served live via GitHub Pages) |
 
 ## License
 
