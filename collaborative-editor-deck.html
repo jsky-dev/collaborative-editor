@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collaborative Editor — a Claude skill · joshbecker.md</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#17324E; --copper:#AB7144; --cream:#F6F1E7; --paper:#FFFDF9;
+    --ink:#22303C; --muted:#5d6b73; --line:#e2d8c7;
+    --ins:#1f7a3d; --insbg:#dff0e1; --del:#9a1c1c; --delbg:#f6dede;
+    --serif:'Fraunces',Georgia,'Times New Roman',serif;
+    --sans:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--cream); color:var(--ink); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  /* deck frame */
+  .deck{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  .slide{
+    position:absolute;inset:0;display:none;flex-direction:column;
+    padding:6vh 8vw 9vh; opacity:0; transition:opacity .4s ease;
+  }
+  .slide.active{display:flex;opacity:1}
+  .slide-inner{margin:auto 0;width:100%;max-width:1060px}
+  /* header / footer chrome */
+  .chrome-top{position:fixed;top:3.2vh;left:8vw;right:8vw;display:flex;align-items:center;justify-content:space-between;z-index:5}
+  .brandmark{display:flex;align-items:center;gap:10px;color:var(--navy);font-family:var(--serif);font-weight:600;letter-spacing:.2px}
+  .brandmark svg{width:30px;height:30px}
+  .brandmark span{font-size:15px}
+  .kicker-chrome{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--copper);font-weight:600}
+  .chrome-bot{position:fixed;bottom:3.4vh;left:8vw;right:8vw;display:flex;align-items:center;justify-content:space-between;z-index:5;font-size:12.5px;color:var(--muted)}
+  .chrome-bot a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}
+  .pageno{font-variant-numeric:tabular-nums}
+  .progress{position:fixed;top:0;left:0;height:3px;background:var(--copper);z-index:6;transition:width .4s ease}
+  /* typography */
+  .kicker{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--copper);font-weight:600;margin:0 0 18px}
+  h1{font-family:var(--serif);font-weight:600;color:var(--navy);line-height:1.04;margin:0}
+  h2{font-family:var(--serif);font-weight:600;color:var(--navy);line-height:1.08;font-size:clamp(28px,4.6vw,46px);margin:0 0 18px;letter-spacing:-.01em}
+  p.lead{font-size:clamp(17px,1.9vw,21px);line-height:1.6;color:var(--ink);max-width:46ch;margin:0 0 16px}
+  p.body{font-size:clamp(15px,1.55vw,17.5px);line-height:1.65;color:var(--ink);max-width:60ch;margin:0 0 14px}
+  .muted{color:var(--muted)}
+  .copper{color:var(--copper)}
+  .navy{color:var(--navy)}
+  /* title slide */
+  .title h1{font-size:clamp(46px,8vw,92px);letter-spacing:-.02em}
+  .title .sub{font-family:var(--serif);font-size:clamp(19px,2.4vw,27px);color:var(--ink);max-width:30ch;line-height:1.3;margin:22px 0 0;font-weight:400}
+  .title .logo-hero{width:clamp(130px,18vw,200px);height:auto;margin-bottom:6px}
+  .title .meta{margin-top:34px;font-size:14px;letter-spacing:.04em;color:var(--muted)}
+  .title .meta b{color:var(--copper);font-weight:600}
+  .rule{height:3px;width:64px;background:var(--copper);border:0;margin:24px 0 0;border-radius:2px}
+  /* chips */
+  .chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}
+  .chip{font-size:13.5px;font-weight:500;color:var(--navy);background:#fff;border:1px solid var(--line);border-radius:999px;padding:8px 15px}
+  .chip .dot{color:var(--copper);font-weight:700;margin-right:6px}
+  /* two-column */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:8px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:24px 26px}
+  .card h3{font-family:var(--sans);font-size:13px;letter-spacing:.12em;text-transform:uppercase;margin:0 0 14px;font-weight:600}
+  .card.good h3{color:var(--ins)} .card.no h3{color:var(--del)}
+  .card ul{margin:0;padding:0;list-style:none}
+  .card li{font-size:15px;line-height:1.5;padding:7px 0 7px 22px;position:relative;color:var(--ink);border-top:1px solid #efe7d8}
+  .card li:first-child{border-top:0}
+  .card li::before{content:"";position:absolute;left:0;top:14px;width:8px;height:8px;border-radius:50%}
+  .card.good li::before{background:var(--ins)} .card.no li::before{background:var(--del)}
+  /* pass cards / steps */
+  .passgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:10px}
+  .pass{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px 18px;position:relative;overflow:hidden}
+  .pass .num{font-family:var(--serif);font-size:40px;font-weight:600;color:var(--copper);line-height:1;opacity:.9}
+  .pass h4{margin:12px 0 8px;font-size:17px;color:var(--navy);font-family:var(--serif);font-weight:600}
+  .pass p{margin:0;font-size:13.5px;line-height:1.5;color:var(--muted)}
+  .pass::after{content:"";position:absolute;left:0;top:0;height:4px;width:100%;background:var(--navy);opacity:.12}
+  .arrowrow{display:flex;align-items:center;gap:14px;color:var(--copper);font-size:13px;margin-top:20px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+  .arrowrow span{color:var(--muted);font-weight:500;text-transform:none;letter-spacing:0}
+  /* feature rows */
+  .frow{display:grid;grid-template-columns:34px 1fr;gap:16px;align-items:start;margin:0 0 16px;max-width:64ch}
+  .frow .ic{width:34px;height:34px;border-radius:9px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-weight:600;font-size:16px}
+  .frow .ic.cu{background:var(--copper)}
+  .frow h4{margin:2px 0 4px;font-size:16.5px;color:var(--navy)}
+  .frow p{margin:0;font-size:14.5px;line-height:1.55;color:var(--muted)}
+  /* pull quote */
+  .pull{font-family:var(--serif);font-size:clamp(22px,3.4vw,36px);line-height:1.22;color:var(--navy);max-width:24ch;font-weight:500;letter-spacing:-.01em;border-left:4px solid var(--copper);padding-left:26px}
+  /* example slide */
+  .ex{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start;margin-top:4px}
+  .flagcard{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px 24px}
+  .flagcard .q{font-size:14px;color:var(--muted);margin:0 0 16px;line-height:1.5}
+  .flagcard .q b{color:var(--navy)}
+  .opt{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:9px 0;font-size:14.5px;line-height:1.45;background:#fff;display:flex;gap:10px;align-items:baseline}
+  .opt .tag{font-weight:600;color:var(--navy);flex:none}
+  .opt.rec{border-color:var(--copper);box-shadow:0 0 0 1px var(--copper) inset}
+  .opt.rec .tag{color:var(--copper)}
+  .pill{display:inline-block;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;background:var(--copper);color:#fff;border-radius:6px;padding:2px 7px;margin-left:8px;font-weight:600;vertical-align:middle}
+  .redline{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px 24px;font-size:16px;line-height:1.7;font-family:var(--serif)}
+  ins{background:var(--insbg);color:var(--ins);text-decoration:none;border-radius:3px;padding:0 2px}
+  del{background:var(--delbg);color:var(--del);border-radius:3px;padding:0 2px}
+  .legend{font-family:var(--sans);font-size:12.5px;color:var(--muted);margin-top:14px}
+  /* outputs */
+  .outgrid{display:grid;grid-template-columns:1.1fr 1fr;gap:26px;align-items:center}
+  .fmt{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:center;padding:12px 0;border-top:1px solid #efe7d8}
+  .fmt:first-child{border-top:0}
+  .fmt .badge{font-size:11px;font-weight:600;text-align:center;padding:6px 8px;border-radius:8px;letter-spacing:.02em}
+  .badge.live{background:var(--insbg);color:var(--ins)}
+  .badge.view{background:#eef1f4;color:var(--navy)}
+  .fmt h4{margin:0 0 2px;font-size:15.5px;color:var(--navy)}
+  .fmt p{margin:0;font-size:13px;color:var(--muted);line-height:1.45}
+  /* steps (CTA) */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+  .step{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px}
+  .step .n{width:30px;height:30px;border-radius:50%;background:var(--copper);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:15px;margin-bottom:12px}
+  .step h4{margin:0 0 6px;font-size:16px;color:var(--navy)}
+  .step p{margin:0;font-size:13.5px;color:var(--muted);line-height:1.5}
+  .step code{background:#f3ecdd;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12.5px;color:var(--navy)}
+  /* nav */
+  .nav{position:fixed;bottom:3vh;right:8vw;display:flex;gap:8px;z-index:7}
+  .nav button{width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:#fff;color:var(--navy);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
+  .nav button:hover{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .dots{position:fixed;bottom:3.7vh;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:7}
+  .dots i{width:8px;height:8px;border-radius:50%;background:var(--line);cursor:pointer;transition:.2s}
+  .dots i.on{background:var(--copper);transform:scale(1.25)}
+  /* buttons */
+  .btnrow{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+  .btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--sans);font-size:14.5px;font-weight:600;text-decoration:none;border-radius:10px;padding:12px 20px;border:1px solid var(--navy);background:var(--navy);color:#fff;transition:.15s}
+  .btn:hover{background:#0f2438}
+  .btn.ghost{background:#fff;color:var(--navy)}
+  .btn.ghost:hover{background:var(--cream)}
+  .btn svg{width:17px;height:17px;fill:currentColor}
+  /* install cards */
+  .install{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:4px}
+  .icard{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .icard h4{margin:0 0 12px;font-size:15.5px;color:var(--navy);display:flex;align-items:center;gap:9px}
+  .icard .tagj{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;font-weight:600;color:var(--copper);background:#fff;border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+  .icard p{margin:0 0 9px;font-size:13.5px;color:var(--muted);line-height:1.5}
+  .icard code{display:block;background:#f3ecdd;border:1px solid var(--line);border-radius:7px;padding:8px 11px;font-size:11.5px;color:var(--navy);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:auto}
+  /* before/after lens lines */
+  .balist{display:grid;gap:10px;margin:6px 0 0}
+  .ba{font-size:14px;line-height:1.5;color:var(--ink)}
+  .ba .lk{font-weight:600;color:var(--navy)}
+  .ba .arr{color:var(--copper);font-weight:700;padding:0 5px}
+  .ba s{color:var(--muted);text-decoration-color:var(--del)}
+  @media(max-width:760px){
+    .cols,.ex,.outgrid,.install{grid-template-columns:1fr}
+    .passgrid,.steps{grid-template-columns:1fr 1fr}
+    .chrome-top,.chrome-bot{left:6vw;right:6vw}
+    .slide{padding:9vh 6vw 12vh}
+  }
+</style>
+</head>
+<body>
+
+<!-- hidden logo symbol -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="logo" viewBox="0 0 1024 1024">
+    <path fill="#17324E" d="M728.66 441.742C743.344 441.233 761.794 443.994 776.624 445.132C788.194 446.236 800.106 446.812 811.522 448.898C832.188 452.675 823.562 479.757 820.921 494.083L813.417 534.973L805.902 575.776C802.483 595.101 802.733 614.689 784.032 625.265C786.683 633.622 803.642 686.221 802.489 691.357C802.232 692.504 800.594 693.716 799.552 694.192C797.349 695.198 794.499 694.858 792.291 694.053C790.552 693.419 789.07 692.497 787.968 690.985C783.249 684.513 780.182 675.154 776.854 667.831L759.929 631.177C747.67 634.264 733.558 636.694 720.978 639.161C722.195 645.461 727.89 669.163 726.007 672.351C720.975 680.869 710.277 674.391 708.515 664.072C707.942 660.711 703.371 642.576 698.805 644.52C696.224 648.77 688.718 689.268 686.881 697.188C685.844 702.441 684.343 718.01 677.163 718.106C670.893 718.189 667.919 717.046 668.135 710.298C668.386 702.45 668.998 694.713 669.523 686.884L672.527 642.185C654.434 638.502 632.702 632.626 614.636 628.102C613.242 631.904 610.133 638.75 607.489 644.496C600.296 659.856 595.471 677.913 586.005 691.918C584.948 693.482 576.623 693.307 574.526 689.702C574.299 679.335 587.384 634.302 590.897 621.722C580.273 616.079 575.93 607.281 577.671 595.292C578.442 589.384 582.318 583.47 582.165 577.532C581.33 545.238 580.837 525.451 618.607 520.003C629.383 518.448 656.825 512.291 665.332 505.533C690.835 485.273 690.425 446.378 728.66 441.742ZM589.478 579.929C609.199 574.126 647.989 568.654 668.648 567.944C683.225 566.42 696.847 568.669 711.147 571.022C725.039 528.783 760.435 552.373 784.434 525.231C792.411 516.209 797.713 488.168 804.667 476.584C808.95 469.449 811.76 466.8 816.695 460.449C815.421 459.161 813.565 457.084 811.876 456.646C805.302 454.944 797.424 454.334 790.671 453.718C779.855 452.742 769.033 451.837 758.205 451.003C751.863 450.5 738.293 448.975 732.526 448.997C731.526 449 730.526 449.052 729.531 449.155C716.827 451.146 710.961 454.67 703.32 465.152C692.564 479.878 684.59 500.703 669.703 511.778C650.033 526.411 619.419 522.929 598.525 534.829C586.739 541.542 589.27 568.155 589.478 579.929ZM690.84 644.138L679.916 643.9C678.265 665.962 675.317 692.287 675.376 714.005C676.288 710.661 677.381 706.965 678.1 703.612C680.578 691.357 683.128 679.116 685.75 666.891C687.253 659.808 688.93 651.002 690.84 644.138ZM767.507 629.77L783.764 665.177C786.189 670.556 788.998 677.606 791.554 682.7C792.694 685.036 793.848 687.519 795.096 689.785C792.056 678.088 788.164 665.709 784.852 654.018C783.341 648.685 778.742 631.652 776.366 627.716C773.517 628.362 770.296 629.023 767.507 629.77ZM585.517 677.795L599.443 644.819C601.288 640.476 605.688 630.676 606.9 626.321L597.687 623.639C592.738 644.351 587.448 664.981 581.821 685.52C583.554 682.491 584.209 681.027 585.517 677.795ZM713.928 640.688L708.851 641.789C711.368 648.666 714.304 658.641 716.998 664.838L717.742 666.476C718.549 665.464 714.897 642.178 713.928 640.688ZM816.711 471.893C801.78 491.391 802.279 516.057 786.729 534.218C770.774 552.851 731.328 542.116 720.922 566.696C712.977 585.462 713.283 607.887 705.394 626.821C704.412 629.178 699.591 634.609 699.439 636.314C725.702 629.919 752.58 626.081 778.706 619.271C786.365 617.275 791.587 609.861 793.109 602.39C801.042 563.46 807.789 524.253 814.771 485.141C815.218 482.635 816.984 473.643 816.711 471.893ZM700.182 620.15C677.108 623.771 659.867 618.397 637.72 613.12C619.777 609.021 601.943 604.462 584.234 599.448C585.04 604.445 586.068 609.637 590.569 612.707C596.407 616.689 662.767 632.873 675.042 634.901C678.173 635.418 681.544 635.923 684.666 635.162C688.931 634.123 692.198 631.388 695.127 628.256C697.332 625.289 698.38 623.404 700.182 620.15ZM585.567 591.723C596.214 595.698 618.028 600.665 629.625 603.438C652.459 609.05 679.767 618.678 702.307 611.619C704.264 601.717 707.172 587.918 709.763 578.244C701.795 576.879 685.671 574.121 677.849 574.73C658.901 575.704 599.096 580.322 585.567 591.723Z"/>
+    <path fill="#17324E" d="M289.814 441.846C334.47 442.471 330.591 483.298 359.301 506.283C369.699 514.608 394.891 517.47 408.287 520.722C423.017 524.298 435.832 527.102 440.341 544.407C443.164 555.665 441.809 567.502 442.102 578.937C442.305 586.84 447.74 591.586 447.067 600.258C446.195 611.495 441.908 616.366 432.838 622.001C435.847 630.878 450.569 682.164 450.266 689.591C449.573 690.98 448.906 691.588 447.39 692.043C445.104 692.73 440.506 693.274 438.388 691.837C433.214 688.325 413.204 636.897 409.835 628.11C396.122 630.851 381.713 635.177 367.942 638.183C362.687 639.33 357.249 641.004 351.943 641.859C353.082 655.743 353.604 669.675 354.665 683.565C355.326 692.218 356.971 701.418 356.721 710.062C356.661 712.16 356.468 714.149 355.174 715.866C353.739 717.771 351.317 718.19 349.086 718.302C346.983 718.408 344.432 717.996 342.875 716.427C338.171 711.687 328.125 645.095 325.275 644.721C324.292 644.593 323.639 644.874 322.728 645.185C317.086 653.281 314.529 683.347 300.503 675.042C299.134 674.231 298.344 671.865 298.17 670.288C298.809 661.458 301.224 648.096 303.053 639.645C291.188 636.637 275.47 634.605 264.357 631.182C258.273 644.754 252.083 658.279 245.787 671.754C243.877 675.836 238.106 688.4 235.787 691.58C234.955 692.708 233.815 693.572 232.504 694.069C230.114 694.995 226.156 695.069 223.901 693.712C222.771 693.031 221.952 692.172 221.687 690.84C220.932 687.038 237.912 633.837 240.44 625.498C222.824 617.134 222.124 597.257 219.038 580.129L211.917 540.839L204.387 500.385C202.493 490.536 200.572 481.154 199.288 471.19C196.271 447.767 214.236 447.423 232.09 446.724L230.914 453.826C226.827 453.973 210.72 454.786 208.51 459.361C208.107 463.608 216.848 470.774 218.86 474.537C226.469 486.727 231.103 514.06 239.281 524.301C262.296 553.123 298.212 527.624 313.275 570.965C319.449 569.66 335.635 567.322 341.472 567.552C367.745 568.589 410.322 571.756 434.907 580.409C435.129 567.863 436.483 549.755 429.881 539.004C424.297 529.912 396.31 525.221 386.377 523.685C346.316 517.491 342.145 498.095 322.424 467.509C315.043 456.061 308.684 451.554 295.271 448.945C292.816 446.308 291.836 444.818 289.814 441.846ZM403.637 601.353C408.695 600.098 435.591 593.99 437.602 591.724C433.114 580.817 349.243 573.697 336.712 575.199C329.473 575.817 322.258 576.682 315.078 577.792C317.107 588.893 319.907 600.047 321.706 611.114C343.937 620.238 380.208 606.16 403.637 601.353ZM323.863 620.111C326.327 624.449 327.405 626.092 330.606 629.953C342.051 639.444 353.369 634.191 366.346 631.009C377.488 628.299 388.614 625.519 399.722 622.67C409.906 620.053 420.181 617.614 430.258 614.662C435.768 613.048 440.321 605.845 439.223 600.33C438.169 599.896 438.641 599.917 437.842 600.015C415.278 606.598 392.461 611.689 369.631 617.239C362.734 618.916 355.605 620.272 348.548 620.983C340.319 621.851 332.009 621.557 323.863 620.111ZM333.613 644.238C337.202 664.081 343.023 685.242 346.952 705.596C347.637 708.589 347.971 710.162 349.139 713.066C349.081 700.055 347.543 687.133 346.451 674.15C345.65 664.624 345.493 653.172 344.22 643.884C343.156 643.253 342.509 643.537 341.233 643.715C338.67 643.92 336.186 644.126 333.613 644.238ZM416.922 626.326L439.398 679.069L442.759 686.17C440.87 678.487 428.216 627.233 425.966 623.74L416.922 626.326ZM315.34 641.932L310.203 640.769C308.699 649.838 307.03 659.185 306.019 668.308C306.935 665.965 307.661 664.055 308.408 661.627C310.573 655.293 312.905 648.107 315.34 641.932ZM233.254 681.127C240.639 664.027 249.139 646.853 256.776 629.655C253.435 629.092 250.454 628.471 247.145 627.734C241.427 648.52 234.554 669.176 228.91 690.045C230.575 686.933 231.804 684.35 233.254 681.127ZM206.928 472.21C209.15 485.792 211.888 499.043 214.367 512.562L223.265 562.263C225.785 575.847 226.899 590.718 231.223 603.808C232.681 608.22 235.481 613.345 239.29 616.102C249.226 623.294 310.119 632.648 326.045 636.148C308.714 618.107 313.284 580.611 300.567 562.26C299.898 561.291 299.139 560.387 298.3 559.561C283.142 544.367 256.671 551.594 238.29 535.137C223.913 522.265 217.335 477.363 206.928 472.21Z"/>
+    <path fill="#17324E" d="M528.158 555.627C530.881 555.594 590.476 556.383 573.867 569.953C565.154 577.071 531.253 577.456 517.979 577.748L517.92 632.653C517.893 643.85 517.694 654.156 518.554 665.269C520.014 684.133 553.915 674.774 556.896 685.993C556.596 687.633 556.048 688.448 554.67 689.33C542.826 696.912 489.061 694.608 474.793 690.941C472.883 690.45 471.647 689.86 470.283 688.445C469.826 687.37 469.451 686.477 469.939 685.32C470.963 682.894 474.201 681.775 476.504 681.113C485.401 678.557 501.719 678.928 506.825 669.769C510.509 663.16 508.521 590.136 508.415 577.541C498.719 577.447 450.358 577.175 448.884 566.119C450.969 557.069 491.149 554.874 499.482 555.885C499.687 558.444 500.211 560.437 500.773 562.926C487.038 564.269 475.787 564.012 461.244 566.287C469.427 567.844 477.338 568.205 485.623 568.811C513.187 570.826 539.054 569.524 566.489 566.487C555.069 564.809 537.135 562.763 525.434 563.073C526.152 560.444 527.145 558.151 528.158 555.627ZM494.768 686.074C501.046 686.468 507.336 686.63 513.625 686.559C519.363 686.525 524.485 686.475 530.219 686.103L513.208 679.062C507.094 681.46 500.973 683.93 494.768 686.074Z"/>
+    <path fill="#AB7144" d="M508.512 469.057C505.962 463.216 502.876 460.067 497.558 455.418C494.291 452.561 483.712 437.608 494.881 436.556C497.248 436.961 500.047 440.296 501.164 441.847C509.313 453.168 510.136 468.153 517.853 479.602C517.97 476.046 518.401 472.507 519.139 469.026C520.543 462.31 526.436 447.555 535.055 449.537C540.597 453.241 533.898 466.7 530.94 470.666C527.602 475.141 523.942 477.952 520.966 482.964C520.856 486.943 521.03 489.236 521.416 493.226C525.198 487.411 526.635 486.262 532.75 482.529C538.817 478.825 551.915 479.462 546.224 489.281C542.175 496.27 530.704 499.148 522.964 500.978C518.587 508.864 518.123 513.375 515.379 521.92C519.624 522.071 521.802 521.799 525.174 524.955C531.181 530.578 523.601 551.053 528.158 555.627C527.145 558.151 526.152 560.444 525.434 563.073C514.601 568.69 510.578 565.371 500.773 562.926C500.211 560.437 499.687 558.444 499.482 555.885C501.283 552.572 498.008 529.49 501.402 524.7C503.314 522.003 508.307 521.793 511.59 521.299C512.608 516.734 513.028 513.25 513.577 508.641C505.858 507.292 501.819 506.691 495.576 501.041C490.94 496.846 489.546 488.539 498.158 489.589C505.722 490.511 511.823 498.454 516.294 504.267C516.667 503.387 516.993 502.488 517.269 501.574C519.025 495.778 517.037 485.652 514.08 480.324C506.827 467.256 488.914 483.563 481.396 466.925C480.373 464.66 482.404 461.903 484.678 461.616C493.39 460.515 501.273 464.796 508.512 469.057ZM507.079 558.75C510.182 558.982 512.86 559.179 515.978 559.187C518.137 559.002 518.228 559.353 519.661 558.262C520.452 554.28 520.145 532.923 519.971 527.755C517.159 527.727 513.907 527.622 511.138 527.705C509.368 527.925 508.442 527.724 507.235 528.643C506.091 534.486 506.814 552.372 507.079 558.75ZM494.432 442.199C496.208 447.018 498.362 451.474 503.002 454.246C501.284 450.178 498.95 443.71 494.432 442.199ZM527.133 495.726C531.684 494.152 540.112 490.372 542.272 485.994L542.106 485.302L541.857 485.156C537.443 485.849 527.09 490.04 526.667 495.199L527.133 495.726ZM496.486 493.735C500.589 499.692 502.458 501.736 509.677 503.637C506.277 498.75 502.59 495.101 496.486 493.735ZM485.401 466.023C489.744 470.844 494.381 472.195 500.716 470.846C496.737 466.995 490.759 466.305 485.401 466.023ZM532.685 454.413C528.864 458.005 522.32 467.272 523.659 472.607C526.467 468.701 533.488 459.294 532.685 454.413Z"/>
+    <path fill="#AB7144" d="M251.685 445.135C255.55 433.533 264.92 430.42 276.258 433.392C282.842 435.118 284.315 438.055 289.451 441.6L289.814 441.846C291.836 444.818 292.816 446.308 295.271 448.945C299.855 458.321 301.976 463.856 305.384 473.717C322.763 476.308 320.697 482.173 328.747 495.152C335.429 505.926 348.615 534.374 324.952 535.686C322.4 534.616 320.847 532.759 321.436 529.96C325.825 524.937 340.94 530.109 331.259 511.482C325.797 500.972 318.46 484.459 306.547 480.384L305.841 480.149C301.669 481.638 298.737 483.55 296.988 488.014C293.427 497.105 294.328 519.512 297.763 528.461C301.945 538.728 307.102 529.597 313.596 531.495C315.282 532.226 317.726 537.003 315.59 538.057C301.166 545.535 290.956 533.922 290.696 519.654C290.378 502.235 282.809 487.559 299.432 475.267C296.574 467.624 292.49 454.759 286.597 449.211C277.679 450.15 268.747 450.958 259.805 451.635C253.073 452.194 244.447 453.079 237.725 452.975C238.244 449.558 238.294 448.084 240.772 445.758C244.555 445.644 247.928 445.575 251.685 445.135ZM279.874 442.983C273.638 438.26 263.829 436.468 259.445 444.528C265.549 444.542 272.992 442.806 279.874 442.983Z"/>
+    <path fill="#17324E" d="M259.445 444.528C265.549 444.542 272.992 442.806 279.874 442.983C283.415 445.232 284.336 445.601 286.597 449.211C277.679 450.15 268.747 450.958 259.805 451.635C253.073 452.194 244.447 453.079 237.725 452.975C238.244 449.558 238.294 448.084 240.772 445.758C244.555 445.644 247.928 445.575 251.685 445.135C254.583 444.787 256.496 444.618 259.445 444.528Z"/>
+    <path fill="#AB7144" d="M232.09 446.724C233.653 442.678 236.116 440.087 240.725 440.155C242.263 440.903 241.745 440.339 242.403 441.834C242.157 443.764 241.783 444.133 240.772 445.758C238.294 448.084 238.244 449.558 237.725 452.975C235.939 466.914 250.59 485.251 258.498 495.821C274.1 491.59 282.424 505.542 275.05 516.791C273.341 519.44 270.613 521.264 267.512 521.83C263.44 522.616 258.569 521.529 255.259 519.032C252.859 517.208 251.308 514.485 250.963 511.491C250.443 507.244 251.73 503.594 253.228 499.732C244.992 489.166 237.275 478.96 233.386 465.867C232.053 461.382 231.886 457.662 230.914 453.826L232.09 446.724ZM265.527 515.756C268.263 514.406 270.076 513.36 271.04 510.224C271.61 508.407 271.372 506.433 270.387 504.803C268.626 501.884 266.129 501.31 262.998 500.95C254.04 504.895 255.286 516.455 265.527 515.756Z"/>
+  </symbol>
+</svg>
+
+<div class="progress" id="progress"></div>
+
+<div class="chrome-top">
+  <div class="brandmark"><svg><use href="#logo"/></svg><span>joshbecker<span class="copper">.md</span></span></div>
+  <div class="kicker-chrome" id="sectionlabel">A Claude Skill</div>
+</div>
+
+<div class="deck" id="deck">
+
+  <!-- 1 TITLE -->
+  <section class="slide title active">
+    <div class="slide-inner">
+      <svg class="logo-hero"><use href="#logo"/></svg>
+      <h1>Collaborative<br>Editor</h1>
+      <p class="sub">Edits <em>with</em> you, not <em>for</em> you — sharpening your writing without flattening your voice.</p>
+      <hr class="rule">
+      <p class="meta">A skill for Claude Code &amp; Cowork &nbsp;·&nbsp; built by <b>joshbecker.md</b></p>
+    </div>
+  </section>
+
+  <!-- 2 PROBLEM -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">The problem</p>
+      <h2>Tired of AI edits that<br>sound like everyone else?</h2>
+      <p class="body">You crafted bold, human ideas — then a chatbot handed them back as smooth, internet-ready slop. Your long winding sentences, your stacked parentheticals, your blunt words: quietly sanded off. You wrote it, but now you wonder — <span class="copper">“does this read like AI?”</span></p>
+      <div style="margin-top:30px" class="pull">Your ideas are bold and human. Your writing should be too.</div>
+    </div>
+  </section>
+
+  <!-- 3 WHAT IT IS -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">What it is</p>
+      <h2>A real editor — after<br>the ideas are down.</h2>
+      <p class="body">You bring the thinking. Collaborative Editor shows up like a sharp human editor for the next part: it reads what you wrote, names what’s working, flags the weak spots, and hands you concrete choices — <span class="navy"><b>turn by turn</b></span>. It never dumps a finished rewrite. You stay the author on every line; it just helps your voice land harder.</p>
+      <div class="chips">
+        <span class="chip"><span class="dot">›</span>Edits <em>with</em> you, not <em>for</em> you</span>
+        <span class="chip"><span class="dot">›</span>Keeps your human voice</span>
+        <span class="chip"><span class="dot">›</span>Built so it won’t read like AI</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 WHO FOR -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">Is it for you?</p>
+      <h2>Built for your own writing —<br>not for standardizing it.</h2>
+      <div class="cols">
+        <div class="card good">
+          <h3>Reach for it when…</h3>
+          <ul>
+            <li>You’re workshopping an essay, post, or argument you wrote</li>
+            <li>You want it to keep sounding like <em>you</em></li>
+            <li>You’d rather be handed options than a rewrite</li>
+            <li>You like editing in passes, back and forth</li>
+          </ul>
+        </div>
+        <div class="card no">
+          <h3>Skip it when…</h3>
+          <ul>
+            <li>It’s a clinical note, letter, or report meant to be standardized</li>
+            <li>You want a one-shot “fix the grammar and send it back”</li>
+            <li>You just want it “made punchier” and delivered</li>
+            <li>You want the final version, no conversation</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 FOUR PASSES -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">How it works</p>
+      <h2>Four passes, in order.</h2>
+      <div class="passgrid">
+        <div class="pass"><div class="num">1</div><h4>Structure</h4><p>Orient on reader, goal &amp; scope — then fix the argument and the shape.</p></div>
+        <div class="pass"><div class="num">2</div><h4>Grammar</h4><p>A tight checklist of real errors: typos, agreement, words used wrong.</p></div>
+        <div class="pass"><div class="num">3</div><h4>Wording</h4><p>Sharpen the flat spots — options to pick from, never imposed.</p></div>
+        <div class="pass"><div class="num">4</div><h4>Coherence</h4><p>One last whole-piece read to make sure nothing came loose.</p></div>
+      </div>
+      <div class="arrowrow">Settle the big things first <span>— polish a sentence too early and you may polish something that gets cut.</span></div>
+    </div>
+  </section>
+
+  <!-- 6 PASS 1 -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">Pass 1 · Structure</p>
+      <h2>Orient first — then interrogate<br>the argument.</h2>
+      <div class="frow"><div class="ic">R</div><div><h4>Reader, goal &amp; scope</h4><p>Who is this for, where does it live, and is it even complete? Every later decision depends on these — and it notices when a draft is really just part one of something larger.</p></div></div>
+      <div class="frow"><div class="ic">E</div><div><h4>Reads structure like an editor</h4><p>Finds your <em>real</em> opening (often two paragraphs in), checks the stakes — does the reader know why this matters? — and pushes abstract claims toward the concrete thing underneath.</p></div></div>
+      <div class="frow"><div class="ic">S</div><div><h4>Options, not verdicts</h4><p>Where the shape is muddy it offers two genuine directions — “lead with the contrast” vs. “invert it and open with the conclusion” — and lets you choose.</p></div></div>
+      <div class="frow"><div class="ic cu">(&nbsp;)</div><div><h4>Your parentheticals stay</h4><p>It treats your asides as voice, not clutter — asking before pulling one out, never deleting it on you.</p></div></div>
+    </div>
+  </section>
+
+  <!-- 7 PASS 2 & 3 -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">Passes 2 &amp; 3 · Grammar &amp; Wording</p>
+      <h2>Correct what’s wrong.<br>Sharpen what’s flat.</h2>
+      <div class="cols">
+        <div class="card">
+          <h3 class="navy">Grammar — a fast checklist</h3>
+          <ul>
+            <li>Typos &amp; agreement, flagged to confirm</li>
+            <li>Words used incorrectly — it caught <em>“moral hazard”</em> where the writer meant <em>“moral injury”</em></li>
+            <li>Ambiguous <em>“this”</em> with no clear referent</li>
+            <li>Strict em-dash discipline; it won’t machine-tool your punctuation</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 class="navy">Wording — choices, in your voice</h3>
+          <ul>
+            <li>2–3 real rewrites per flat spot, plus “leave it alone”</li>
+            <li>Strong verbs over flab — <em>“is reflective of”</em> → <em>“reflects”</em></li>
+            <li>Dead clichés flagged; old-to-new flow fixes the “clunky, can’t say why”</li>
+            <li>Repetition checked, not assumed — sometimes it’s a deliberate drumbeat</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 EXAMPLE -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">What a choice looks like</p>
+      <h2>Every flag is an offer — clickable,<br>never imposed.</h2>
+      <div class="ex">
+        <div class="flagcard">
+          <p class="q">Flagged: <b>“Now, any reasonable person would never tolerate this from a mechanic.”</b> The hinge of the piece, but a touch limp.</p>
+          <div class="opt rec"><span class="tag">B</span><span>“…you would never stand for this from a mechanic.”<span class="pill">Recommended</span></span></div>
+          <div class="opt"><span class="tag">A</span><span>“Now — no one would tolerate this from a mechanic.”</span></div>
+          <div class="opt"><span class="tag">C</span><span>Leave it as-is.</span></div>
+          <div class="opt" style="border-style:dashed"><span class="tag copper">You</span><span>“Now, you would never tolerate this from a mechanic.”</span></div>
+        </div>
+        <div>
+          <div class="redline">
+            For that hour <ins>— the one that actually found the problem —</ins> he is paid $100 by the <del>narrow network</del><ins>narrow-network</ins> insurance. <del>Even worse, by</del><ins>By</ins> morning the tire is flat again.
+          </div>
+          <p class="legend"><ins>&nbsp;added&nbsp;</ins> &nbsp; <del>&nbsp;removed&nbsp;</del> &nbsp;— the same edits, shown as a redline.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 PASS 4 -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">Pass 4 · Coherence sweep</p>
+      <h2>The read you can only do<br>once the parts are done.</h2>
+      <p class="body">Editing sentence by sentence can quietly damage the whole even as it improves the parts. So the final pass reads for the <span class="copper">seams, not the sentences</span>:</p>
+      <div class="frow"><div class="ic">↺</div><div><h4>Structure still intact?</h4><p>A reordering that left an “as I said above” pointing at nothing.</p></div></div>
+      <div class="frow"><div class="ic">⚑</div><div><h4>Any idea left hanging?</h4><p>A claim set up but never paid off, a promise the piece no longer keeps.</p></div></div>
+      <div class="frow"><div class="ic">≈</div><div><h4>New redundancy or contradiction?</h4><p>Two tightened passages that now quietly disagree.</p></div></div>
+    </div>
+  </section>
+
+  <!-- 10 OUTPUTS -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">The deliverable</p>
+      <h2>Your marked-up final —<br>in any format you choose.</h2>
+      <div class="outgrid">
+        <div>
+          <div class="fmt"><div class="badge live">Live edits</div><div><h4>Word (.docx) — tracked changes</h4><p>Real insertions &amp; deletions you Accept or Reject.</p></div></div>
+          <div class="fmt"><div class="badge live">Live edits</div><div><h4>Apple Pages &amp; Google Docs</h4><p>The same .docx imports as change-tracking / Suggestions.</p></div></div>
+          <div class="fmt"><div class="badge view">Visual</div><div><h4>PDF redline</h4><p>Insertions underlined, deletions struck — for print &amp; sharing.</p></div></div>
+          <div class="fmt"><div class="badge view">Visual</div><div><h4>HTML redline</h4><p>Renders in any browser, no app required.</p></div></div>
+        </div>
+        <div class="redline">
+          The patient is the <del>occasion</del><ins>whole point</ins> of the transaction<del>, not a party to it</del>.
+          <p class="legend" style="margin-top:18px">Always paired with a clean copy — the redline is for review, the clean version is what you publish.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 CTA -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="kicker">Get started</p>
+      <h2>Try it on your next draft.</h2>
+      <div class="install">
+        <div class="icard">
+          <h4><span class="tagj">Claude Code</span></h4>
+          <p>Clone the repo, then drop the skill into your skills folder:</p>
+          <code>cp -R collaborative-editor ~/.claude/skills/</code>
+        </div>
+        <div class="icard">
+          <h4><span class="tagj">Claude Cowork</span></h4>
+          <p>Download the package, add it via <em>Settings → Capabilities</em>:</p>
+          <code>collaborative-editor.skill</code>
+        </div>
+      </div>
+      <p class="body" style="margin-top:20px;max-width:none">Then just ask — <span class="navy"><b>“Be my collaborative editor on this draft.”</b></span></p>
+      <div class="btnrow">
+        <a class="btn" href="https://github.com/jsky-dev/collaborative-editor" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>View on GitHub</a>
+        <a class="btn ghost" href="https://github.com/jsky-dev/collaborative-editor/raw/main/collaborative-editor.skill">Download the .skill</a>
+      </div>
+      <p class="meta" style="margin-top:22px;font-size:13.5px;color:var(--muted)">MIT-licensed &nbsp;·&nbsp; <span class="copper" style="font-weight:600">joshbecker.md</span> &nbsp;·&nbsp; sharpen the writing, keep the voice.</p>
+    </div>
+  </section>
+
+</div>
+
+<div class="dots" id="dots"></div>
+<div class="nav"><button id="prev" aria-label="Previous">‹</button><button id="next" aria-label="Next">›</button></div>
+<div class="chrome-bot">
+  <span><a href="https://www.joshbecker.md" target="_blank" rel="noopener">joshbecker.md</a> &nbsp;·&nbsp; <a href="https://github.com/jsky-dev/collaborative-editor" target="_blank" rel="noopener">GitHub</a></span>
+  <span class="pageno"><span id="cur">1</span> / <span id="tot">11</span></span>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  const labels=['A Claude Skill','The Problem','What It Is','Who It’s For','The Method','Pass 1','Passes 2–3','Example','Pass 4','Output','Get Started'];
+  const dots=document.getElementById('dots');
+  slides.forEach((_,i)=>{const d=document.createElement('i');d.onclick=()=>go(i);dots.appendChild(d);});
+  let idx=0;const tot=slides.length;
+  document.getElementById('tot').textContent=tot;
+  function go(n){
+    idx=Math.max(0,Math.min(tot-1,n));
+    slides.forEach((s,i)=>s.classList.toggle('active',i===idx));
+    [...dots.children].forEach((d,i)=>d.classList.toggle('on',i===idx));
+    document.getElementById('cur').textContent=idx+1;
+    document.getElementById('progress').style.width=((idx+1)/tot*100)+'%';
+    document.getElementById('sectionlabel').textContent=labels[idx];
+  }
+  document.getElementById('next').onclick=()=>go(idx+1);
+  document.getElementById('prev').onclick=()=>go(idx-1);
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();go(idx+1);}
+    if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();go(idx-1);}
+    if(e.key==='Home')go(0); if(e.key==='End')go(tot-1);
+  });
+  go(0);
+</script>
+</body>
+</html>
